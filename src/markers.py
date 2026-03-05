@@ -69,10 +69,15 @@ def clear_markers(timeline, color: str = None) -> int:
     markers = timeline.GetMarkers()
     removed = 0
     
-    for frame, marker_data in markers.items():
-        if color is None or marker_data.get("color") == color:
-            if timeline.DeleteMarkerAtFrame(frame):
-                removed += 1
+    # Create list of frames to delete (avoid modifying dict during iteration)
+    frames_to_delete = [
+        frame for frame, marker_data in markers.items()
+        if color is None or marker_data.get("color") == color
+    ]
+    
+    for frame in frames_to_delete:
+        if timeline.DeleteMarkerAtFrame(frame):
+            removed += 1
     
     return removed
 
