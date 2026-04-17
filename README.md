@@ -5,9 +5,15 @@ AI-powered editing assistant for DaVinci Resolve. Analyzes your timeline, adds m
 ## Features
 
 - **Auto-markers**: Transcribes video, identifies highlights and dead air, adds color-coded markers to timeline
-- **Shorts extraction**: Finds the best 60-90 second clips for vertical video
+- **Shorts extraction**: Finds the best 60-90 second clips for vertical video and **builds a separate Shorts timeline automatically**
+- **Rough-cut generation**: Builds a new timeline with all detected dead-air regions removed
+- **Filler-word detection**: Word-level timing finds every "um / uh / like / you know" so they show up as red markers (or get removed by the rough cut)
+- **Chapter markers + YouTube description**: One click produces chapter markers and writes a ready-to-paste description file
+- **Subtitle export**: One click writes `.srt` and `.vtt` files for the timeline
 - **Preview before apply**: Review and approve/reject markers before they're added
-- **Transcript caching**: Re-runs are instant (no re-transcription needed)
+- **Smart transcript caching**: Cache key includes per-clip identity + in/out points, so reordering or trimming clips invalidates the cache automatically
+- **Live progress**: Whisper progress is reported in real-time inside Resolve
+- **Clear by color**: Pick any marker color and remove just those markers
 - **In-app UI**: Runs directly from Resolve's Scripts menu
 
 ## Marker Colors
@@ -15,8 +21,9 @@ AI-powered editing assistant for DaVinci Resolve. Analyzes your timeline, adds m
 | Color | Meaning |
 |-------|---------|
 | 🟢 Green | Highlight - keep this |
-| 🔴 Red | Dead air - cut this |
+| 🔴 Red | Dead air or filler - cut this |
 | 🔵 Blue | Potential short clip |
+| 🟡 Yellow | Chapter marker (review) |
 
 ## Requirements
 
@@ -25,8 +32,9 @@ AI-powered editing assistant for DaVinci Resolve. Analyzes your timeline, adds m
 - **Python 3.10+**
 - **ffmpeg** (for audio extraction)
 
-### API Key
-- **Anthropic API key** (for AI analysis)
+### API Key (pick one)
+- **Anthropic API key** (default), OR
+- **OpenAI API key** — set `OPENAI_API_KEY` and the app auto-switches
 
 ## Installation
 
@@ -65,20 +73,42 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 3. Set up Anthropic API key
+### 3. Set up an API key
 
-Get your API key from [console.anthropic.com](https://console.anthropic.com)
+Pick whichever provider you already have credit with.
 
-**Option A: Environment variable (recommended)**
+**Anthropic Claude (default):**
 ```bash
-# Add to your shell profile (~/.zshrc, ~/.bashrc, etc.)
-export ANTHROPIC_API_KEY="your-api-key-here"
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+Get a key at [console.anthropic.com](https://console.anthropic.com).
+
+**OpenAI:**
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+Get a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
+
+The app auto-detects which key you've set. If you have both, force one with:
+```bash
+export AI_PROVIDER=openai     # or "anthropic"
 ```
 
-**Option B: Create .env file**
+**Or use a .env file:**
+
+The app auto-loads `.env` from these locations (first match wins, real env vars always win):
+
+1. `~/.resolve-ai-assistant/.env`  ← **recommended for the in-Resolve script**
+2. `<repo>/.env`
+3. `./.env`
+
 ```bash
-cp .env.example .env
-# Edit .env and add your key
+# Recommended for in-Resolve usage (Resolve doesn't see your shell env)
+mkdir -p ~/.resolve-ai-assistant
+cat > ~/.resolve-ai-assistant/.env <<'EOF'
+OPENAI_API_KEY=sk-...
+# AI_PROVIDER=openai
+EOF
 ```
 
 ### 4. Install to DaVinci Resolve
@@ -130,11 +160,40 @@ source venv/bin/activate
 # Transcribe a video
 python src/cli.py transcribe video.mp4 --model base
 
-# Analyze and generate markers
-python src/cli.py analyze -v video.mp4 -o markers.json
+# Analyze and generate markers (now supports fillers + chapters)
+python src/cli.py analyze -v video.mp4 -o markers.json --fillers --chapters
 
 # Apply markers to Resolve (Resolve must be open)
 python src/cli.py apply markers.json
+
+# Export subtitles from a video or saved transcript
+python src/cli.py subtitles video.mp4 -o my_subs
+
+# Build a "dead air removed" rough cut into Resolve
+python src/cli.py rough-cut markers.json --name "My Rough Cut"
+
+# Build a shorts timeline from SHORT_CLIP markers
+python src/cli.py shorts-timeline markers.json --name "Shorts"
+```
+
+### Choosing the model
+
+Default models:
+- Anthropic → `claude-sonnet-4-6`
+- OpenAI → `gpt-4o`
+
+Override with:
+```bash
+export CLAUDE_MODEL="claude-opus-4-6"     # higher quality, higher cost
+export OPENAI_MODEL="gpt-4o-mini"         # cheaper / faster
+```
+
+### Output files
+
+Subtitles, descriptions, and other artifacts written from the in-app UI land in:
+
+```
+~/.resolve-ai-assistant/exports/
 ```
 
 ## Troubleshooting
@@ -170,9 +229,9 @@ ffmpeg -version
 
 ## Known Limitations
 
-- **"Generate rough cut"** is not yet implemented (button is disabled)
-- **"Create shorts timeline"** identifies clips but requires manual extraction
-- Cache invalidation is based on clip count (reordering clips won't trigger re-transcription)
+- Rough-cut generation rebuilds the timeline from the source media; per-clip color/effects/speed are not yet preserved
+- Filler-word detection requires the `tiny` model or larger (uses Whisper word-level timestamps)
+- Chapter generation does an extra Claude call (~$0.01 per 10-minute video)
 
 ## License
 

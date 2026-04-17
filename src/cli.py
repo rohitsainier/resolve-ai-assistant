@@ -10,6 +10,14 @@ import sys
 import os
 from pathlib import Path
 
+# Load .env files (does not override real env vars)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    from env_loader import load_env
+    load_env()
+except Exception as _e:
+    print(f"env_loader skipped: {_e}")
+
 
 def cmd_transcribe(args):
     """Transcribe a video file."""
@@ -51,45 +59,66 @@ def cmd_transcribe(args):
 
 def cmd_analyze(args):
     """Analyze a transcript or video for edit points."""
-    from transcribe import transcribe_video_file, Transcript, TranscriptSegment
-    from analyze import analyze_transcript, analyze_for_silence
-    
+    from transcribe import transcribe_video_file, Transcript, TranscriptSegment, Word
+    from analyze import (
+        analyze_transcript, analyze_for_silence, analyze_for_fillers,
+        generate_chapters,
+    )
+
     # Load or create transcript
     if args.transcript:
         print(f"📄 Loading transcript: {args.transcript}")
         with open(args.transcript) as f:
             data = json.load(f)
-        
+
+        segs = []
+        for s in data["segments"]:
+            words = None
+            if s.get("words"):
+                words = [Word(w["start"], w["end"], w["text"]) for w in s["words"]]
+            segs.append(TranscriptSegment(s["start"], s["end"], s["text"], words))
         transcript = Transcript(
-            segments=[
-                TranscriptSegment(s["start"], s["end"], s["text"])
-                for s in data["segments"]
-            ],
+            segments=segs,
             language=data.get("language", "en"),
             duration=data.get("duration", 0)
         )
     else:
         print(f"🎤 Transcribing: {args.video}")
         transcript = transcribe_video_file(args.video, args.model)
-    
+
     print(f"🧠 Analyzing ({len(transcript.segments)} segments)...")
-    
+
     options = {
         "add_highlights": args.highlights,
         "mark_dead_air": args.dead_air,
         "find_shorts": args.shorts,
     }
-    
+
     # Get AI analysis
     markers = []
     if any(options.values()):
         markers = analyze_transcript(transcript, options)
-    
+
     # Also detect silence gaps
     if args.dead_air:
         silence_markers = analyze_for_silence(transcript)
         markers.extend(silence_markers)
-    
+
+    # Filler words (uses word-level Whisper output)
+    if args.fillers:
+        markers.extend(analyze_for_fillers(transcript))
+
+    # Chapter markers (writes description alongside)
+    if args.chapters:
+        chapter_markers, description = generate_chapters(transcript)
+        markers.extend(chapter_markers)
+        if description:
+            base = args.video if args.video else args.transcript
+            desc_path = Path(base).with_suffix(".description.txt")
+            with open(desc_path, "w", encoding="utf-8") as f:
+                f.write(description)
+            print(f"📝 Saved description to: {desc_path}")
+
     print(f"✅ Found {len(markers)} edit points")
     
     # Output markers
@@ -167,6 +196,102 @@ def cmd_apply(args):
     print(f"✅ Added {added} markers to timeline")
 
 
+def _load_transcript(path: str):
+    from transcribe import Transcript, TranscriptSegment, Word
+    with open(path) as f:
+        data = json.load(f)
+    segs = []
+    for s in data["segments"]:
+        words = None
+        if s.get("words"):
+            words = [Word(w["start"], w["end"], w["text"]) for w in s["words"]]
+        segs.append(TranscriptSegment(s["start"], s["end"], s["text"], words))
+    return Transcript(
+        segments=segs,
+        language=data.get("language", "en"),
+        duration=data.get("duration", 0),
+    )
+
+
+def _load_markers(path: str):
+    from analyze import EditMarker, MarkerType
+    with open(path) as f:
+        data = json.load(f)
+    return [
+        EditMarker(
+            start_seconds=m["start"],
+            end_seconds=m["end"],
+            marker_type=MarkerType(m["type"]),
+            label=m.get("label", ""),
+            note=m.get("note", ""),
+            confidence=m.get("confidence", 1.0),
+        )
+        for m in data
+    ]
+
+
+def cmd_subtitles(args):
+    """Export .srt + .vtt for a video or an existing transcript JSON."""
+    if args.source.endswith(".json"):
+        transcript = _load_transcript(args.source)
+        base = args.output or str(Path(args.source).with_suffix(""))
+    else:
+        from transcribe import transcribe_video_file
+        print(f"🎤 Transcribing: {args.source}")
+        transcript = transcribe_video_file(args.source, args.model)
+        base = args.output or str(Path(args.source).with_suffix(""))
+
+    srt_path = base + ".srt"
+    vtt_path = base + ".vtt"
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.write(transcript.to_srt())
+    with open(vtt_path, "w", encoding="utf-8") as f:
+        f.write(transcript.to_vtt())
+    print(f"✅ Wrote {srt_path}")
+    print(f"✅ Wrote {vtt_path}")
+
+
+def cmd_rough_cut(args):
+    """Build a rough-cut timeline (dead air removed) in Resolve."""
+    from ai_edit_assistant import get_resolve, get_current_timeline
+    from markers import create_rough_cut_timeline
+
+    markers_list = _load_markers(args.markers)
+    resolve = get_resolve()
+    if not resolve:
+        print("❌ Could not connect to DaVinci Resolve")
+        sys.exit(1)
+    project, timeline, err = get_current_timeline(resolve)
+    if err:
+        print(f"❌ {err}")
+        sys.exit(1)
+
+    new_tl = create_rough_cut_timeline(project, timeline, markers_list, name=args.name)
+    print(f"✅ Created rough cut timeline: {new_tl.GetName() if new_tl else '(failed)'}")
+
+
+def cmd_shorts_timeline(args):
+    """Build a Shorts timeline in Resolve from SHORT_CLIP markers."""
+    from ai_edit_assistant import get_resolve, get_current_timeline
+    from markers import create_subclip_timeline
+
+    markers_list = _load_markers(args.markers)
+    resolve = get_resolve()
+    if not resolve:
+        print("❌ Could not connect to DaVinci Resolve")
+        sys.exit(1)
+    project, timeline, err = get_current_timeline(resolve)
+    if err:
+        print(f"❌ {err}")
+        sys.exit(1)
+
+    new_tl = create_subclip_timeline(project, timeline, markers_list, name=args.name)
+    if new_tl is None:
+        print("⚠️ No SHORT_CLIP markers found; nothing to create.")
+    else:
+        print(f"✅ Created shorts timeline: {new_tl.GetName()}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="AI Edit Assistant - Analyze videos and add edit markers"
@@ -201,7 +326,33 @@ def main():
     p_analyze.add_argument("--shorts", action="store_true", default=True,
                            help="Find short clips (default: true)")
     p_analyze.add_argument("--no-shorts", action="store_false", dest="shorts")
+    p_analyze.add_argument("--fillers", action="store_true",
+                           help="Detect filler words (um, uh, like) at word level")
+    p_analyze.add_argument("--chapters", action="store_true",
+                           help="Generate chapter markers + YouTube description")
     p_analyze.set_defaults(func=cmd_analyze)
+
+    # Subtitle export
+    p_subs = subparsers.add_parser("subtitles", help="Export .srt + .vtt subtitles")
+    p_subs.add_argument("source", help="Path to video OR transcript JSON")
+    p_subs.add_argument("-m", "--model", default="base",
+                        choices=["tiny", "base", "small", "medium", "large"])
+    p_subs.add_argument("-o", "--output", help="Output base path (no extension)")
+    p_subs.set_defaults(func=cmd_subtitles)
+
+    # Rough cut from a markers file
+    p_rough = subparsers.add_parser("rough-cut",
+        help="Build a 'dead-air-removed' timeline in Resolve from markers JSON")
+    p_rough.add_argument("markers", help="Path to markers JSON file")
+    p_rough.add_argument("--name", default="Rough Cut", help="New timeline name")
+    p_rough.set_defaults(func=cmd_rough_cut)
+
+    # Shorts timeline from a markers file
+    p_shorts_tl = subparsers.add_parser("shorts-timeline",
+        help="Build a Shorts timeline in Resolve from markers JSON")
+    p_shorts_tl.add_argument("markers", help="Path to markers JSON file")
+    p_shorts_tl.add_argument("--name", default="Shorts", help="New timeline name")
+    p_shorts_tl.set_defaults(func=cmd_shorts_timeline)
     
     # Apply command
     p_apply = subparsers.add_parser("apply", help="Apply markers to Resolve timeline")
