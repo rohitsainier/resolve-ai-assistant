@@ -130,9 +130,17 @@ class AssistantDialog:
                                           command=self._on_clear_color)
         self.clear_color_btn.pack(side="left", expand=True, fill="x", padx=4)
 
+        # Buttons row 3 — prompt mode
+        btns3 = ttk.Frame(main)
+        btns3.pack(fill="x", pady=(6, 0))
+        self.prompt_btn = ttk.Button(btns3, text="💬 Prompt Edit (chat with timeline)",
+                                     command=self._on_prompt)
+        self.prompt_btn.pack(fill="x", padx=4)
+
         # Hooks for outer code to override
         self._on_clear_all_cb: Optional[Callable] = None
         self._on_clear_color_cb: Optional[Callable] = None
+        self._on_prompt_cb: Optional[Callable] = None
 
         self.root.protocol("WM_DELETE_WINDOW", self._close)
 
@@ -228,6 +236,9 @@ class AssistantDialog:
     def on_clear_color(self, callback: Callable):
         self._on_clear_color_cb = callback
 
+    def on_prompt(self, callback: Callable):
+        self._on_prompt_cb = callback
+
     def _on_clear_all(self):
         if self._on_clear_all_cb:
             self._on_clear_all_cb()
@@ -235,6 +246,10 @@ class AssistantDialog:
     def _on_clear_color(self):
         if self._on_clear_color_cb:
             self._on_clear_color_cb()
+
+    def _on_prompt(self):
+        if self._on_prompt_cb:
+            self._on_prompt_cb()
 
     def run(self):
         """Block until window closed."""
@@ -312,6 +327,144 @@ def show_marker_preview(markers) -> list:
     if result["cancelled"]:
         return []
     return result["indices"]
+
+
+class PromptWindow:
+    """Chat-style window for natural-language editing commands."""
+
+    EXAMPLES = [
+        "Mark every time AI or machine learning is mentioned",
+        "Remove all filler words and long pauses",
+        "Find the 3 funniest moments and make a shorts timeline",
+        "Clear all red markers",
+        "Add a yellow marker at the intro and the outro",
+    ]
+
+    def __init__(self, send_callback: Callable[[str], None]):
+        """send_callback(text): called on a worker thread with the user's message.
+        The callback should use append_assistant() when done."""
+        self._send = send_callback
+
+        self.win = tk.Toplevel()
+        self.win.title("💬 Prompt Edit")
+        self.win.geometry("640x560")
+        try:
+            self.win.attributes("-topmost", True)
+            self.win.lift()
+        except Exception:
+            pass
+
+        pad = {"padx": 10, "pady": 4}
+        top = ttk.Frame(self.win)
+        top.pack(fill="x", **pad)
+        ttk.Label(top,
+                  text="Describe what you want to do with the timeline:",
+                  font=("", 11, "bold")).pack(anchor="w")
+
+        # Example chips
+        ex_frame = ttk.Frame(self.win)
+        ex_frame.pack(fill="x", padx=10)
+        ttk.Label(ex_frame, text="Examples:",
+                  font=("", 9), foreground="#777").pack(anchor="w")
+        for ex in self.EXAMPLES:
+            btn = ttk.Button(
+                ex_frame, text=ex,
+                command=lambda e=ex: self._set_input(e),
+            )
+            btn.pack(anchor="w", fill="x", pady=1)
+
+        # History view
+        hist_frame = ttk.Frame(self.win)
+        hist_frame.pack(fill="both", expand=True, **pad)
+        hist_sb = ttk.Scrollbar(hist_frame)
+        hist_sb.pack(side="right", fill="y")
+        self.history = tk.Text(
+            hist_frame, wrap="word", height=12,
+            yscrollcommand=hist_sb.set,
+            state="disabled", font=("Menlo", 11),
+        )
+        self.history.pack(side="left", fill="both", expand=True)
+        hist_sb.config(command=self.history.yview)
+
+        # Configure text tags for styling
+        self.history.tag_configure("user", foreground="#0b3d91", font=("Menlo", 11, "bold"))
+        self.history.tag_configure("assistant", foreground="#0a7f43")
+        self.history.tag_configure("result", foreground="#555")
+        self.history.tag_configure("error", foreground="#c00")
+
+        # Input
+        input_frame = ttk.Frame(self.win)
+        input_frame.pack(fill="x", **pad)
+        self.input_box = tk.Text(input_frame, height=3, wrap="word", font=("Menlo", 11))
+        self.input_box.pack(fill="x", side="top")
+        self.input_box.bind("<Command-Return>", lambda e: self._send_clicked())
+
+        btn_row = ttk.Frame(self.win)
+        btn_row.pack(fill="x", **pad)
+        self.send_btn = ttk.Button(btn_row, text="Send (⌘↵)", command=self._send_clicked)
+        self.send_btn.pack(side="left", expand=True, fill="x", padx=2)
+        ttk.Button(btn_row, text="Close", command=self.win.destroy).pack(side="left", expand=True, fill="x", padx=2)
+
+        # Thread-safe queue for assistant output
+        self._queue: "queue.Queue[tuple]" = queue.Queue()
+        self.win.after(100, self._drain)
+
+    def _set_input(self, text: str):
+        self.input_box.delete("1.0", "end")
+        self.input_box.insert("1.0", text)
+
+    def _append(self, text: str, tag: str = None):
+        self.history.configure(state="normal")
+        self.history.insert("end", text, tag or "")
+        self.history.configure(state="disabled")
+        self.history.see("end")
+
+    def _send_clicked(self):
+        msg = self.input_box.get("1.0", "end").strip()
+        if not msg:
+            return
+        self.input_box.delete("1.0", "end")
+        self._append(f"\n> {msg}\n", "user")
+        self.send_btn.configure(state="disabled", text="Working...")
+        self.input_box.configure(state="disabled")
+
+        # Run the callback on a worker thread so the UI stays responsive
+        threading.Thread(target=self._run_send, args=(msg,), daemon=True).start()
+
+    def _run_send(self, msg: str):
+        try:
+            self._send(msg)
+        except Exception as e:
+            self.append_line(f"✗ Error: {type(e).__name__}: {e}", "error")
+        finally:
+            self._queue.put(("reenable",))
+
+    # Thread-safe API called from the send callback
+    def append_line(self, text: str, tag: str = None):
+        self._queue.put(("append", text + "\n", tag))
+
+    def append_block(self, lines: list, tag: str = None):
+        for ln in lines:
+            self._queue.put(("append", ln + "\n", tag))
+
+    def _drain(self):
+        try:
+            while True:
+                msg = self._queue.get_nowait()
+                if msg[0] == "append":
+                    _, text, tag = msg
+                    self._append(text, tag)
+                elif msg[0] == "reenable":
+                    self.send_btn.configure(state="normal", text="Send (⌘↵)")
+                    self.input_box.configure(state="normal")
+                    self.input_box.focus_set()
+        except queue.Empty:
+            pass
+        finally:
+            try:
+                self.win.after(80, self._drain)
+            except Exception:
+                pass
 
 
 def prompt_clear_color() -> Optional[str]:

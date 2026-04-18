@@ -871,27 +871,245 @@ def run_analysis_tk(resolve, timeline, dlg, options):
         dlg.reenable()
 
 
+def _run_analysis_web(resolve, timeline, state, options):
+    """Analysis pipeline — writes progress/preview to shared state."""
+    from transcribe import transcribe_timeline_audio
+    from analyze import (
+        analyze_transcript, analyze_for_silence, analyze_for_fillers,
+        generate_chapters, MarkerType,
+    )
+    from markers import apply_markers, create_subclip_timeline, create_rough_cut_timeline
+    import time
+
+    def progress(pct, text=None):
+        state.set_status(text, pct)
+
+    try:
+        t_start = time.time()
+        project, tl, err = get_current_timeline(resolve)
+        if err:
+            progress(0, f"❌ {err}")
+            return
+
+        use_cache = options.get("use_cache", True)
+        whisper_model = options.get("whisper_model", "base")
+
+        cache_key = get_timeline_cache_key(tl)
+        transcript = None
+        if use_cache:
+            transcript = get_cached_transcript(cache_key)
+            if transcript:
+                progress(30, "📋 Using cached transcript")
+
+        if not transcript:
+            progress(5, "📝 Extracting audio...")
+
+            def wp(pct_, status_):
+                progress(10 + int(pct_ * 0.45), f"🎤 {status_}")
+
+            transcript = transcribe_timeline_audio(
+                tl, model_name=whisper_model, progress_callback=wp
+            )
+            save_transcript_cache(cache_key, transcript)
+            progress(55, "📋 Transcript cached")
+
+        progress(60, "🧠 Analyzing...")
+        ai_opts = {
+            "add_highlights": options.get("add_highlights", True),
+            "mark_dead_air": options.get("mark_dead_air", True),
+            "find_shorts": options.get("find_shorts", True),
+        }
+        markers = []
+        if any(ai_opts.values()):
+            try:
+                markers = analyze_transcript(transcript, ai_opts)
+            except Exception as e:
+                progress(65, f"⚠ AI failed: {str(e)[:60]}")
+                if ai_opts["mark_dead_air"]:
+                    markers = analyze_for_silence(transcript)
+        if ai_opts["mark_dead_air"]:
+            sil = analyze_for_silence(transcript)
+            existing = {(m.start_seconds, m.end_seconds) for m in markers}
+            for sm in sil:
+                if (sm.start_seconds, sm.end_seconds) not in existing:
+                    markers.append(sm)
+
+        progress(75, f"✅ Found {len(markers)} markers")
+
+        if not markers:
+            progress(100, "No markers found")
+            return
+
+        # Hand off to frontend for review
+        progress(80, "👀 Review markers in browser...")
+        selected_idx = state.request_preview(markers)
+        if not selected_idx:
+            progress(100, "No markers selected")
+            return
+        selected = [markers[i] for i in selected_idx]
+
+        progress(88, f"🎯 Adding {len(selected)} markers...")
+        added = apply_markers(tl, selected)
+        extras = []
+
+        if options.get("detect_fillers"):
+            progress(90, "🪶 Scanning fillers...")
+            fill = analyze_for_fillers(transcript)
+            if fill:
+                apply_markers(tl, fill)
+                extras.append(f"{len(fill)} fillers")
+
+        if options.get("export_subs"):
+            progress(92, "💬 Exporting subtitles...")
+            try:
+                srt, _ = _export_subtitles(tl, transcript)
+                extras.append(f"subs → {os.path.basename(srt)}")
+            except Exception as e:
+                extras.append(f"subs failed: {e}")
+
+        if options.get("generate_chapters"):
+            progress(94, "📚 Generating chapters...")
+            try:
+                cm, desc = generate_chapters(transcript)
+                if cm:
+                    apply_markers(tl, cm)
+                    p = _save_description(tl, desc)
+                    extras.append(f"{len(cm)} chapters → {os.path.basename(p)}")
+            except Exception as e:
+                extras.append(f"chapters failed: {e}")
+
+        if options.get("create_shorts_timeline"):
+            progress(96, "✂ Creating shorts timeline...")
+            shorts = [m for m in selected if m.marker_type == MarkerType.SHORT_CLIP]
+            if shorts:
+                try:
+                    new_tl = create_subclip_timeline(project, tl, shorts,
+                                                    name=f"{tl.GetName()} - Shorts")
+                    if new_tl:
+                        extras.append(f"shorts tl ({len(shorts)} clips)")
+                except Exception as e:
+                    extras.append(f"shorts failed: {e}")
+
+        if options.get("create_rough_cut"):
+            progress(98, "✂ Building rough cut...")
+            dead = [m for m in selected if m.marker_type == MarkerType.DEAD_AIR]
+            if dead:
+                try:
+                    new_tl = create_rough_cut_timeline(project, tl, dead,
+                                                      name=f"{tl.GetName()} - Rough Cut")
+                    if new_tl:
+                        extras.append("rough cut tl")
+                except Exception as e:
+                    extras.append(f"rough cut failed: {e}")
+
+        elapsed = int(time.time() - t_start)
+        suffix = " (" + ", ".join(extras) + ")" if extras else ""
+        progress(100, f"✅ Added {added} markers in {elapsed}s{suffix}")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        progress(0, f"❌ {e}")
+
+
 def main():
-    """Main entry point — uses Tkinter for the UI (works in Resolve Free)."""
+    """Main entry point — web-based UI served in the default browser."""
     resolve = get_resolve()
     if not resolve:
         print("Error: Could not connect to DaVinci Resolve")
         return
 
-    from tk_ui import AssistantDialog
+    from web_server import SharedState, start_server
+    from markers import clear_markers
+    from transcribe import transcribe_timeline_audio
+    from prompt_editor import run_prompt
+    import webbrowser
 
-    # Timeline metadata for header
+    state = SharedState()
+
+    # Populate timeline info for the UI header
     _, timeline, err = get_current_timeline(resolve)
+    cost_info = {}
     if timeline:
-        tl_name = timeline.GetName()
         duration = estimate_duration_minutes(timeline)
-        cost = estimate_cost(duration).get("estimated_cost_usd", 0)
+        cost_info = estimate_cost(duration)
+        state.info = {
+            "timeline": timeline.GetName(),
+            "duration_min": duration,
+            "cost": cost_info.get("estimated_cost_usd", 0),
+            "provider": cost_info.get("provider", "anthropic"),
+            "model": os.environ.get("OPENAI_MODEL") or os.environ.get("CLAUDE_MODEL") or "default",
+        }
     else:
-        tl_name = "(no timeline)"
-        duration = 0
-        cost = 0
+        state.info = {"timeline": None, "duration_min": 0, "cost": 0,
+                      "provider": "", "model": ""}
 
-    dlg = AssistantDialog(tl_name, duration, cost)
+    # --- endpoint handlers ---
+    def handle_analyze(body: dict):
+        _, tl, err = get_current_timeline(resolve)
+        if not tl:
+            state.set_status("❌ No timeline open", 0)
+            return {"error": "no timeline"}
+        _run_analysis_web(resolve, tl, state, body or {})
+        return {"done": True}
+
+    def handle_prompt(body: dict):
+        message = (body or {}).get("message", "").strip()
+        if not message:
+            return {"error": "empty message"}
+        _, tl, err = get_current_timeline(resolve)
+        if not tl:
+            return {"error": "no timeline", "explanation": "No timeline open.", "results": []}
+
+        cache_key = get_timeline_cache_key(tl)
+        transcript = get_cached_transcript(cache_key)
+        if transcript is None:
+            state.set_status("📝 Transcribing (one-time)...", 20)
+            try:
+                transcript = transcribe_timeline_audio(tl, model_name="base")
+                save_transcript_cache(cache_key, transcript)
+                state.set_status("✓ Transcribed", 100)
+            except Exception as e:
+                return {"explanation": f"Transcription failed: {e}", "results": []}
+
+        state.set_status("🧠 Thinking...", 50)
+        try:
+            result = run_prompt(message, transcript, resolve, tl)
+            state.set_status("✅ Done", 100)
+            return result
+        except Exception as e:
+            state.set_status(f"❌ {e}", 0)
+            return {"explanation": f"Error: {type(e).__name__}: {e}", "results": []}
+
+    def handle_clear(body: dict):
+        _, tl, err = get_current_timeline(resolve)
+        if not tl:
+            return {"removed": 0, "error": "no timeline"}
+        color = (body or {}).get("color") or None
+        return {"removed": clear_markers(tl, color)}
+
+    state.register("analyze", handle_analyze)
+    state.register("prompt", handle_prompt)
+    state.register("clear_markers", handle_clear)
+
+    # --- start server + open browser ---
+    server, port = start_server(state)
+    url = f"http://127.0.0.1:{port}"
+    print(f"AI Edit Assistant running at {url}")
+    state.set_status("Ready", 0)
+    try:
+        webbrowser.open(url, new=2)
+    except Exception:
+        pass
+
+    # Keep the script alive so the server stays up. Resolve runs the script
+    # in a dedicated thread; we just block here.
+    try:
+        import time
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        server.shutdown()
 
     def on_analyze():
         if not timeline:
@@ -937,9 +1155,63 @@ def main():
         removed = clear_markers(tl, color)
         dlg.set_status(f"🗑 Cleared {removed} {color} markers")
 
+    def on_prompt():
+        """Open the prompt window and hook up the send callback."""
+        from tk_ui import PromptWindow
+        from prompt_editor import run_prompt
+        from transcribe import transcribe_timeline_audio
+
+        _, tl, err = get_current_timeline(resolve)
+        if not tl:
+            dlg.set_status("❌ No timeline")
+            return
+
+        # We need a transcript. Use cached if available, otherwise transcribe now.
+        state = {"prompt_window": None}
+
+        def on_send(message: str):
+            pw = state["prompt_window"]
+            cache_key = get_timeline_cache_key(tl)
+            transcript = get_cached_transcript(cache_key)
+            if transcript is None:
+                pw.append_line("📝 No cached transcript — transcribing now (one-time)...",
+                               tag="assistant")
+                try:
+                    transcript = transcribe_timeline_audio(tl, model_name="base")
+                    save_transcript_cache(cache_key, transcript)
+                    pw.append_line(f"✓ Transcribed {len(transcript.segments)} segments",
+                                   tag="result")
+                except Exception as e:
+                    pw.append_line(f"✗ Transcription failed: {e}", tag="error")
+                    return
+
+            pw.append_line("🧠 Thinking...", tag="assistant")
+            try:
+                result = run_prompt(message, transcript, resolve, tl)
+            except Exception as e:
+                pw.append_line(f"✗ {type(e).__name__}: {e}", tag="error")
+                return
+
+            if result.get("explanation"):
+                pw.append_line(result["explanation"], tag="assistant")
+
+            if result.get("results"):
+                pw.append_line("", tag="result")
+                for line in result["results"]:
+                    tag = "error" if line.startswith(("✗", "⚠")) else "result"
+                    pw.append_line(f"  {line}", tag=tag)
+            elif not result.get("explanation"):
+                pw.append_line("(nothing to do)", tag="result")
+
+        def open_window():
+            state["prompt_window"] = PromptWindow(send_callback=on_send)
+
+        dlg.run_on_main(open_window)
+
     dlg.on_analyze(on_analyze)
     dlg.on_clear_all(on_clear_all)
     dlg.on_clear_color(on_clear_color)
+    dlg.on_prompt(on_prompt)
     dlg.run()
 
 
