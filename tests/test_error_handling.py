@@ -63,9 +63,7 @@ class TestAnalyzeTranscriptWithMockedAPI:
             duration=25.0
         )
         
-        # Mock API response
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text='''[
+        canned = '''[
             {
                 "start": "00:00:10.500",
                 "end": "00:00:25.000",
@@ -73,18 +71,17 @@ class TestAnalyzeTranscriptWithMockedAPI:
                 "label": "Amazing content",
                 "note": "High engagement"
             }
-        ]''')]
-        
-        mock_client_instance = MagicMock()
-        mock_client_instance.messages.create.return_value = mock_response
-        
-        with patch('anthropic.Anthropic', return_value=mock_client_instance):
+        ]'''
+
+        # Patch the provider-agnostic helper directly — tests shouldn't
+        # care about which SDK we happen to use today.
+        with patch('analyze.llm_complete', return_value=canned):
             markers = analyze_transcript(transcript, {
                 "add_highlights": True,
                 "mark_dead_air": False,
                 "find_shorts": False
             })
-        
+
         assert len(markers) == 1
         assert markers[0].marker_type == MarkerType.HIGHLIGHT
         assert markers[0].label == "Amazing content"
@@ -101,15 +98,9 @@ class TestAnalyzeTranscriptWithMockedAPI:
         )
         
         # Response is not valid JSON
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text='This is not JSON at all')]
-        
-        mock_client_instance = MagicMock()
-        mock_client_instance.messages.create.return_value = mock_response
-        
-        with patch('anthropic.Anthropic', return_value=mock_client_instance):
+        with patch('analyze.llm_complete', return_value='This is not JSON at all'):
             markers = analyze_transcript(transcript, {"add_highlights": True})
-        
+
         # Should return empty list, not crash
         assert markers == []
 

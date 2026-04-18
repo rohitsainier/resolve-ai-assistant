@@ -200,12 +200,25 @@ Fixed in current version — `AddMarker` takes the offset from timeline start, n
 ### "Address already in use"
 A previous run of the server is still up. Quit Resolve fully (Cmd+Q) and relaunch.
 
+## Testing
+
+The suite has 250+ tests covering parsing, tool dispatch, agent context, memory/profiles, audio analysis, delivery presets, and the web server's preview/plan handshakes. Resolve-side calls are mocked via `MagicMock`; network calls are stubbed at the `llm_complete` boundary.
+
+```bash
+./run_tests.sh                    # run everything
+./run_tests.sh tests/test_profiles.py   # one file
+./run_tests.sh -k "filler"        # filter by test name
+```
+
+The runner auto-picks the right Python (prefers python.org 3.11 since that's what Resolve uses). If pytest isn't installed, it installs it on first run.
+
 ## Known Limitations
 
 - **Rough cut** rebuilds the timeline from source media; per-clip color/effects/speed are not preserved
 - **Filler-word detection** requires Whisper word-level timestamps (any model works; tiny is fastest)
 - **Chapter generation** does an extra LLM call (~$0.01 per 10-minute video)
-- Prompt mode currently uses single-shot generation — a future version will support iterative tool-use for multi-step plans
+- **Prompt-approval modal** is browser-only — no terminal confirmation fallback
+- Tests requiring real Resolve / real LLM calls are marked `@pytest.mark.skip` and require manual setup to run
 
 ## License
 

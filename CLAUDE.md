@@ -120,26 +120,82 @@ Quick compile-check all sources:
 cd src && python3 -m py_compile *.py && echo OK
 ```
 
+Run the test suite (uses python.org Python automatically):
+```bash
+./run_tests.sh                     # everything
+./run_tests.sh tests/test_memory.py  # single file
+./run_tests.sh -k fillers          # filtered
+```
+
 Test the CLI standalone:
 ```bash
 python src/cli.py analyze -v short_clip.mp4 -o /tmp/markers.json --fillers --chapters
 ```
-
-Test the web UI without Resolve (fake Resolve object → server only):
-Not currently wired up. Would be a nice addition.
 
 Reinstall launcher after editing `install.sh`:
 ```bash
 ./install.sh
 ```
 
-## Open tasks (from user conversations)
+## Testing patterns
 
-- Upgrade prompt mode from single-shot to iterative tool-use (OpenAI function calling / Anthropic tools)
-- Add a "Stop" button in the web UI to cleanly shut down the server
-- Speaker diarization (whisperX / pyannote) + per-speaker marker coloring
-- B-roll suggestion markers
-- Thumbnail frame picker at highlight markers
-- Local-only mode (Ollama + whisper.cpp)
-- Per-creator style profile feeding into analysis prompts
-- Clean up diagnostic `log()` spam from `markers.py` and `transcribe.py` once stable
+The suite (~260 tests) runs entirely without Resolve. Key patterns:
+
+### Mocking Resolve objects
+Use `MagicMock` for timeline/project/resolve. See `tests/conftest.py::mock_resolve` and `tests/test_agent_tools.py::mock_ctx` for working examples.
+
+### Mocking LLM calls
+**Don't mock the SDK** — mock `analyze.llm_complete` directly:
+```python
+with patch("analyze.llm_complete", return_value='[{"start": "00:00:01", ...}]'):
+    markers = analyze_transcript(transcript, options)
+```
+This is stable across provider changes and avoids coupling tests to anthropic/openai internals.
+
+### Isolating disk-based modules
+`profiles.py` and `memory.py` write to `~/.resolve-ai-assistant/`. Tests redirect via monkeypatch:
+```python
+@pytest.fixture
+def tmp_profiles_dir(tmp_path, monkeypatch):
+    import profiles
+    monkeypatch.setattr(profiles, "PROFILES_DIR", str(tmp_path / "profiles"))
+    monkeypatch.setattr(profiles, "ACTIVE_POINTER", str(tmp_path / "active"))
+    return tmp_path
+```
+
+### Mocking ffmpeg
+`audio_analysis.py` runs ffmpeg via `_run_ffmpeg_analysis`. Tests patch that helper with canned stderr captures (see `tests/test_audio_analysis.py`).
+
+### Testing handshakes
+The server's preview/plan modals use a threading.Event handshake. Tests start a worker thread that blocks on `state.request_preview()`, then the main thread polls `state.get_status()` and calls `state.submit_preview(indices)` to unblock — see `tests/test_web_server.py::TestPreviewHandshake`.
+
+### Testing the live HTTP server
+`TestHttpServer` actually starts the server on a free port, hits it with `urllib.request`, then shuts it down. Use `find_free_port(offset)` per test to avoid port collisions.
+
+### Known-flaky fixtures
+- `sample_transcript` fixture lives in `tests/conftest.py` — don't duplicate it
+- Tests that mutate `os.environ` must use `monkeypatch.setenv/delenv`, never direct assignment
+
+## Shipped phases
+
+| Phase | Shipped | Highlights |
+|---|---|---|
+| 1 | ✅ | Transcription, markers, rough cut, shorts timeline, chapters, subtitles, filler detection, provider abstraction |
+| 2 | ✅ | Multi-turn agent with 9 tools + undo log |
+| 3 | ✅ | Vision (analyze_frame, suggest_thumbnails), identify_speakers, suggest_broll, list_media_pool |
+| 4 | ✅ | Render presets (5 platforms) + audio analysis (LUFS/clipping/silence) |
+| 5 | ✅ | Creator profiles (5 builtins) + batch_render_shorts + normalize_audio_render |
+| 6 | ✅ | Cross-session memory (per-timeline journal + pinned facts) + plan-approval modal |
+
+27 logical tools, 35 schema entries. Overall coverage: ~90%.
+
+## Open tasks
+
+- Acoustic diarization (whisperX / pyannote) — upgrade from the current LLM-heuristic speaker ID
+- Auto b-roll matching — vision-caption every media-pool clip, semantically match to suggest_broll output
+- Color grading (requires Resolve Studio API)
+- Auto captions / lower-thirds from transcript
+- Local-only mode (Ollama + whisper.cpp) for offline use
+- Auto-apply audio fixes — insert volume keyframes inside Resolve timeline (not just external render)
+- "Stop" button in web UI for graceful server shutdown
+- Clean up diagnostic `log()` spam from `markers.py` / `transcribe.py` once the pipeline is fully stable

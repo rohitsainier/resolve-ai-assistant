@@ -93,20 +93,72 @@ class TestTranscriptCaching:
         assert len(key1) == 12  # MD5 hash truncated to 12 chars
     
     def test_cache_key_changes_with_content(self):
-        """Test that cache key changes when timeline content changes."""
+        """Test that cache key changes when timeline content changes.
+
+        The improved cache key hashes per-clip (unique_id, start, end, left_offset)
+        across all tracks, so simply adding a clip must change the key.
+        """
         from ai_edit_assistant import get_timeline_cache_key
-        
-        mock_timeline1 = MagicMock()
-        mock_timeline1.GetName.return_value = "Timeline"
-        mock_timeline1.GetItemListInTrack.return_value = [1, 2]
-        
-        mock_timeline2 = MagicMock()
-        mock_timeline2.GetName.return_value = "Timeline"
-        mock_timeline2.GetItemListInTrack.return_value = [1, 2, 3]  # Different clip count
-        
-        key1 = get_timeline_cache_key(mock_timeline1)
-        key2 = get_timeline_cache_key(mock_timeline2)
-        
+
+        def make_clip(uid, start, end, offset=0):
+            c = MagicMock()
+            item = MagicMock()
+            item.GetUniqueId.return_value = uid
+            c.GetMediaPoolItem.return_value = item
+            c.GetStart.return_value = start
+            c.GetEnd.return_value = end
+            c.GetLeftOffset.return_value = offset
+            return c
+
+        def make_tl(name, clips, audio=None):
+            tl = MagicMock()
+            tl.GetName.return_value = name
+            tl.GetTrackCount.side_effect = lambda kind: 1 if kind in ("video", "audio") else 0
+            def items(kind, idx):
+                if kind == "video" and idx == 1:
+                    return clips
+                if kind == "audio" and idx == 1:
+                    return audio or []
+                return []
+            tl.GetItemListInTrack.side_effect = items
+            return tl
+
+        tl1 = make_tl("Timeline", [make_clip("a", 0, 100), make_clip("b", 100, 200)])
+        tl2 = make_tl("Timeline", [make_clip("a", 0, 100), make_clip("b", 100, 200), make_clip("c", 200, 300)])
+
+        key1 = get_timeline_cache_key(tl1)
+        key2 = get_timeline_cache_key(tl2)
+
+        assert key1 != key2, f"Expected different keys, got {key1!r} for both"
+
+    def test_cache_key_detects_reorder(self):
+        """Reordering clips must invalidate the cache."""
+        from ai_edit_assistant import get_timeline_cache_key
+
+        def make_clip(uid, start, end):
+            c = MagicMock()
+            item = MagicMock()
+            item.GetUniqueId.return_value = uid
+            c.GetMediaPoolItem.return_value = item
+            c.GetStart.return_value = start
+            c.GetEnd.return_value = end
+            c.GetLeftOffset.return_value = 0
+            return c
+
+        def make_tl(clips):
+            tl = MagicMock()
+            tl.GetName.return_value = "Timeline"
+            tl.GetTrackCount.return_value = 1
+            tl.GetItemListInTrack.return_value = clips
+            return tl
+
+        a, b = make_clip("a", 0, 100), make_clip("b", 100, 200)
+        key1 = get_timeline_cache_key(make_tl([a, b]))
+
+        # Same clips in different order → different starts
+        a2, b2 = make_clip("a", 100, 200), make_clip("b", 0, 100)
+        key2 = get_timeline_cache_key(make_tl([b2, a2]))
+
         assert key1 != key2
 
 
