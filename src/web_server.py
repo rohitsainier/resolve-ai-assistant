@@ -28,6 +28,9 @@ class SharedState:
         self._preview_markers = None  # when set, frontend shows modal
         self._preview_result: Optional[list] = None  # filled by frontend
         self._preview_event = threading.Event()
+        self._plan_pending = None  # {description, actions} when awaiting approval
+        self._plan_result = None   # True / False after user decides
+        self._plan_event = threading.Event()
         self.info = {}  # timeline/provider info
         self._handlers = {}  # {endpoint: callable(body_dict) -> dict}
 
@@ -46,6 +49,10 @@ class SharedState:
                 out["preview"] = self._preview_markers
                 # Deliver only once — clear after sending
                 self._preview_markers = None
+            if self._plan_pending is not None:
+                out["plan"] = self._plan_pending
+                # Deliver only once — frontend will POST its decision
+                self._plan_pending = None
             return out
 
     # --- marker preview: worker blocks on the event until frontend replies ---
@@ -73,6 +80,39 @@ class SharedState:
         with self._lock:
             self._preview_result = indices
         self._preview_event.set()
+
+    # --- plan approval: parallel to marker preview but for agent plans ---
+    def __post_init_plan__(self):
+        # Helpers populated lazily; we just declare attributes via get/setattr
+        pass
+
+    def request_plan_approval(self, description: str, actions: list,
+                              timeout: float = 600) -> bool:
+        """Ask the UI to approve a plan. Blocks until the user clicks approve/reject."""
+        with self._lock:
+            self._plan_pending = {
+                "description": description,
+                "actions": actions,
+            }
+            self._plan_result = None
+            self._plan_event = threading.Event()
+        self._plan_event.wait(timeout=timeout)
+        with self._lock:
+            approved = bool(self._plan_result)
+            self._plan_pending = None
+            self._plan_result = None
+            return approved
+
+    def submit_plan_decision(self, approved: bool):
+        with self._lock:
+            self._plan_result = approved
+            ev = getattr(self, "_plan_event", None)
+        if ev:
+            ev.set()
+
+    def get_pending_plan(self):
+        with self._lock:
+            return getattr(self, "_plan_pending", None)
 
     # --- endpoint handlers ---
     def register(self, name: str, handler: Callable):
@@ -175,6 +215,12 @@ def _build_handler(state: SharedState):
                 indices = body.get("indices") or []
                 state.submit_preview(list(indices))
                 self._send_json({"ok": True})
+                return
+
+            if name == "approve_plan":
+                approved = bool(body.get("approved"))
+                state.submit_plan_decision(approved)
+                self._send_json({"ok": True, "approved": approved})
                 return
 
             # Dispatch to a registered handler — run on a worker thread so

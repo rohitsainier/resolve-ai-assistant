@@ -1074,7 +1074,13 @@ def main():
 
         state.set_status("🧠 Thinking...", 50)
         try:
-            result = run_prompt(message, transcript, resolve, tl)
+            # Thread the plan-approval handshake through: prompt_editor → agent → ctx.
+            # When the agent calls submit_plan, it will block on the UI's decision.
+            def approval_cb(desc, actions):
+                return state.request_plan_approval(desc, actions)
+
+            result = run_prompt(message, transcript, resolve, tl,
+                                plan_approval_cb=approval_cb)
             state.set_status("✅ Done", 100)
             return result
         except Exception as e:
@@ -1088,9 +1094,55 @@ def main():
         color = (body or {}).get("color") or None
         return {"removed": clear_markers(tl, color)}
 
+    def handle_list_profiles(body: dict):
+        from profiles import list_all, get_active_id
+        return {"active_id": get_active_id(), "profiles": list_all()}
+
+    def handle_get_profile(body: dict):
+        from profiles import load_profile, get_active_id
+        from dataclasses import asdict
+        pid = (body or {}).get("id") or get_active_id()
+        p = load_profile(pid)
+        if not p:
+            return {"error": f"Profile '{pid}' not found"}
+        return {"profile": asdict(p)}
+
+    def handle_save_profile(body: dict):
+        from profiles import save_profile, Profile
+        data = body or {}
+        if not data.get("id") or not data.get("name"):
+            return {"error": "id and name are required"}
+        try:
+            # Filter to known fields only
+            allowed = {
+                "id", "name", "description", "tone", "pacing", "max_shot_seconds",
+                "target_platforms", "target_lufs", "filler_sensitivity",
+                "dead_air_threshold", "preferred_marker_colors", "style_notes",
+            }
+            filtered = {k: v for k, v in data.items() if k in allowed}
+            p = Profile(**filtered)
+            path = save_profile(p)
+            return {"ok": True, "saved_path": path, "id": p.id}
+        except Exception as e:
+            return {"error": f"{type(e).__name__}: {e}"}
+
+    def handle_set_active_profile(body: dict):
+        from profiles import set_active_id, load_profile
+        pid = (body or {}).get("id")
+        if not pid:
+            return {"error": "id required"}
+        if load_profile(pid) is None:
+            return {"error": f"Profile '{pid}' not found"}
+        set_active_id(pid)
+        return {"ok": True, "active_id": pid}
+
     state.register("analyze", handle_analyze)
     state.register("prompt", handle_prompt)
     state.register("clear_markers", handle_clear)
+    state.register("list_profiles", handle_list_profiles)
+    state.register("get_profile", handle_get_profile)
+    state.register("save_profile", handle_save_profile)
+    state.register("set_active_profile", handle_set_active_profile)
 
     # --- start server + open browser ---
     server, port = start_server(state)

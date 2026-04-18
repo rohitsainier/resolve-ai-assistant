@@ -239,29 +239,83 @@ def _apply_single_marker(timeline, marker: EditMarker, color: str) -> bool:
     ))
 
 
-def run_prompt(user_request: str, transcript, resolve, timeline) -> dict:
-    """Main entry point. Returns {'explanation': str, 'results': [str]}."""
+def run_prompt(user_request: str, transcript, resolve, timeline,
+               ui_cb=None, plan_approval_cb=None) -> dict:
+    """Main entry point — routes to the multi-turn agent.
+
+    Returns {'explanation': str, 'results': [str]}. The optional ui_cb is called
+    with (event, payload) for each tool use so the UI can stream steps.
+    plan_approval_cb(description, actions) -> bool is used for submit_plan.
+    """
+    from agent import run_agent
+
     _log(f"=== prompt: {user_request!r}")
-    if not transcript or not transcript.segments:
-        return {
-            "explanation": "No transcript available. Run Analyze first to transcribe the timeline.",
-            "results": [],
-        }
 
-    prompt = build_prompt(user_request, transcript, timeline.GetName())
-    _log(f"sending prompt to LLM ({len(prompt)} chars)")
-    response_text = llm_complete(prompt, max_tokens=4096)
-    _log(f"got response ({len(response_text)} chars)")
+    # Track steps for UI rendering if no callback is provided
+    collected = []
+    def _cb(event, payload):
+        collected.append((event, payload))
+        if ui_cb:
+            try:
+                ui_cb(event, payload)
+            except Exception:
+                pass
 
-    parsed = parse_response(response_text)
-    actions = parsed.get("actions", [])
-    explanation = parsed.get("explanation", "")
+    result = run_agent(user_request, transcript, resolve, timeline,
+                       ui_cb=_cb, plan_approval_cb=plan_approval_cb)
 
-    _log(f"executing {len(actions)} actions")
-    results = execute_actions(actions, resolve, timeline)
+    # Map the streaming events into the legacy {results: [str]} shape so the
+    # existing UI keeps working while streaming is opt-in.
+    summary_lines = []
+    for event, payload in collected:
+        if event == "tool_use":
+            name = payload.get("name")
+            args = payload.get("input", {})
+            # Compact arg preview
+            preview = ", ".join(f"{k}={_short(v)}" for k, v in list(args.items())[:3])
+            summary_lines.append(f"🔧 {name}({preview})")
+        elif event == "tool_result":
+            name = payload.get("name")
+            res = payload.get("result", {})
+            short = _short_result(res)
+            summary_lines.append(f"   ↳ {short}")
+        elif event == "tool_error":
+            summary_lines.append(f"   ✗ error in {payload.get('name')}")
+        elif event == "assistant_text":
+            txt = payload.get("text", "").strip()
+            if txt:
+                summary_lines.append(f"💭 {txt}")
 
     return {
-        "explanation": explanation,
-        "actions": actions,
-        "results": results,
+        "explanation": result.get("explanation", ""),
+        "results": summary_lines,
     }
+
+
+def _short(v) -> str:
+    s = str(v)
+    return s if len(s) <= 40 else s[:37] + "..."
+
+
+def _short_result(res: dict) -> str:
+    if not isinstance(res, dict):
+        return _short(res)
+    # Human-readable summaries for common results
+    if "error" in res:
+        return f"error: {res['error']}"
+    if "results" in res and isinstance(res["results"], list):
+        n = len(res["results"])
+        total = res.get("total_matches", n)
+        return f"{n} matches (of {total})"
+    if "markers" in res and isinstance(res["markers"], list):
+        return f"{len(res['markers'])} markers"
+    if res.get("new_timeline"):
+        return f"created '{res['new_timeline']}'"
+    if res.get("removed") is not None:
+        return f"removed {res['removed']}"
+    if res.get("ok") is True:
+        bits = [f"{k}={v}" for k, v in res.items() if k != "ok"][:3]
+        return "ok" + (" · " + ", ".join(bits) if bits else "")
+    if res.get("ok") is False:
+        return f"failed: {res.get('error') or res.get('note') or '?'}"
+    return _short(res)

@@ -491,6 +491,7 @@
     <button class="active" data-tab="analyze">🔍 Analyze</button>
     <button data-tab="prompt">💬 Prompt</button>
     <button data-tab="markers">🗑 Markers</button>
+    <button data-tab="profiles">👤 Profiles</button>
     <button data-tab="help">❓ Help</button>
   </nav>
 
@@ -573,6 +574,79 @@
       </div>
     </div>
 
+    <!-- PROFILES TAB -->
+    <div class="tab-panel" id="tab-profiles">
+      <div class="section">
+        <div class="section-title">Active profile</div>
+        <div class="field">
+          <label>Choose creator profile (affects all agent prompts)</label>
+          <select id="active-profile"></select>
+        </div>
+        <div id="active-profile-desc" style="color:var(--text-dim);font-size:12px;padding:8px 2px"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Edit profile</div>
+
+        <div class="field"><label>ID (lowercase, no spaces)</label>
+          <input type="text" id="p-id" placeholder="my_channel" />
+        </div>
+        <div class="field"><label>Name</label>
+          <input type="text" id="p-name" placeholder="My channel style" />
+        </div>
+        <div class="field"><label>Description</label>
+          <input type="text" id="p-description" placeholder="Fast-paced tech channel on YouTube" />
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="field"><label>Tone</label>
+            <select id="p-tone">
+              <option>casual</option><option>formal</option>
+              <option>energetic</option><option>conversational</option>
+              <option>neutral</option>
+            </select>
+          </div>
+          <div class="field"><label>Pacing</label>
+            <select id="p-pacing">
+              <option>fast</option><option>balanced</option><option>slow</option>
+            </select>
+          </div>
+          <div class="field"><label>Max shot (seconds, blank = no limit)</label>
+            <input type="text" id="p-max-shot" placeholder="e.g. 8" />
+          </div>
+          <div class="field"><label>Target platform preset</label>
+            <select id="p-platform">
+              <option value="">(none)</option>
+              <option>youtube_1080p</option>
+              <option>youtube_4k</option>
+              <option>tiktok_vertical</option>
+              <option>instagram_square</option>
+            </select>
+          </div>
+          <div class="field"><label>Target LUFS</label>
+            <input type="text" id="p-lufs" placeholder="-14" />
+          </div>
+          <div class="field"><label>Filler sensitivity</label>
+            <select id="p-fillers">
+              <option>low</option><option selected>medium</option><option>high</option>
+            </select>
+          </div>
+          <div class="field"><label>Dead air threshold (seconds)</label>
+            <input type="text" id="p-dead-air" placeholder="3" />
+          </div>
+        </div>
+
+        <div class="field"><label>Style notes (free text)</label>
+          <textarea id="p-notes" rows="4" placeholder="I like hard cuts, no fades. Keep hooks at the start."></textarea>
+        </div>
+
+        <div class="btn-row">
+          <button class="secondary" id="profile-load-btn">Load selected</button>
+          <button class="primary" id="profile-save-btn">Save profile</button>
+        </div>
+      </div>
+    </div>
+
     <!-- HELP TAB -->
     <div class="tab-panel" id="tab-help">
       <div class="help-hero">
@@ -581,13 +655,13 @@
             <circle class="track" cx="50" cy="50" r="42" />
             <circle class="fill-arc" cx="50" cy="50" r="42"
                     stroke-dasharray="264"
-                    stroke-dashoffset="203" />
+                    stroke-dashoffset="26" />
           </svg>
-          <div class="pct">23%</div>
+          <div class="pct">90%</div>
         </div>
         <div class="msg">
           <h3>Vision: a 5-year-old can edit in Resolve with words</h3>
-          <p>We've covered the fundamentals — transcription, markers, rough cuts, shorts, subtitles, chapters, and single-shot prompt editing. Big creative tasks (effects, titles, color, audio, multi-cam) still need a human. Roadmap below.</p>
+          <p>Phase 6 just shipped — the agent is now safe and persistent. Cross-session memory means "like last time" works, pinned facts survive forever, and the agent can now propose multi-step plans for you to approve before anything runs. 27 tools total.</p>
         </div>
       </div>
 
@@ -652,12 +726,12 @@
         </div>
 
         <div class="help-card">
-          <h4>💬 Prompt editing <span class="badge partial">mvp</span></h4>
+          <h4>💬 Agent prompt editing <span class="badge done">done</span></h4>
           <ul>
-            <li>"Mark every time I mention AI"</li>
-            <li>"Find the 3 funniest moments"</li>
-            <li>"Clear all red markers"</li>
-            <li>Single-shot planner → executes actions</li>
+            <li>Multi-turn tool use — searches transcript, inspects markers, refines</li>
+            <li>"Find the 3 funniest moments" → search → mark → summarize</li>
+            <li>"Tighten this up" → list dead air → build rough cut</li>
+            <li>Undo support — revert any agent action</li>
           </ul>
         </div>
 
@@ -678,44 +752,156 @@
             <li><code>AI_PROVIDER</code> to force one</li>
           </ul>
         </div>
+
+        <div class="help-card">
+          <h4>👁 Vision analysis <span class="badge done">done</span></h4>
+          <ul>
+            <li><code>analyze_frame</code> — describe any timeline moment</li>
+            <li>Frame extraction via ffmpeg (seek-accurate)</li>
+            <li>Both Claude &amp; GPT-4o vision endpoints</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🖼 Thumbnail picker <span class="badge done">done</span></h4>
+          <ul>
+            <li><code>suggest_thumbnails</code> — scored by vision model</li>
+            <li>Auto-uses highlight markers if no timestamps given</li>
+            <li>Returns ranked with strengths/weaknesses</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🗣 Speaker identification <span class="badge done">done</span></h4>
+          <ul>
+            <li><code>identify_speakers</code> — LLM clusters from context</li>
+            <li>Segment ranges per speaker</li>
+            <li>Best-effort; not acoustic diarization</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🎞 B-roll suggestions <span class="badge done">done</span></h4>
+          <ul>
+            <li><code>suggest_broll</code> — proposes insertion points</li>
+            <li>Each with description + rationale</li>
+            <li>Style hint support (cinematic, stock, etc.)</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>📂 Media pool access <span class="badge done">done</span></h4>
+          <ul>
+            <li><code>list_media_pool</code> — walks all bins</li>
+            <li>Returns name, duration, path, resolution</li>
+            <li>Foundation for future auto-matching</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>📦 Delivery presets <span class="badge done">done</span></h4>
+          <ul>
+            <li>YouTube 1080p / 4K, TikTok/Reels, Instagram Square, Proxy</li>
+            <li><code>render_timeline</code> — queues or starts render</li>
+            <li><code>render_status</code> — live job state</li>
+            <li>Saves to <code>~/.resolve-ai-assistant/renders/</code></li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🔊 Audio analysis <span class="badge done">done</span></h4>
+          <ul>
+            <li><code>analyze_audio_levels</code> — EBU R128 LUFS measurement</li>
+            <li>Clipping detection (true peak)</li>
+            <li>Silence region detection</li>
+            <li>Plain-English fix recommendations</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>👤 Creator profiles <span class="badge done">done</span></h4>
+          <ul>
+            <li>5 built-ins: YouTube, Shorts, Podcast, Corporate, Default</li>
+            <li>Editable — tone, pacing, target LUFS, filler sensitivity, notes</li>
+            <li>Auto-injected into every agent prompt</li>
+            <li>Saved to <code>~/.resolve-ai-assistant/profiles/</code></li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🗂 Batch render shorts <span class="badge done">done</span></h4>
+          <ul>
+            <li><code>batch_render_shorts</code> — one file per SHORT_CLIP marker</li>
+            <li>Auto-numbered filenames</li>
+            <li>Uses any platform preset (TikTok default)</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🎚 Audio normalization <span class="badge done">done</span></h4>
+          <ul>
+            <li><code>normalize_audio_render</code> — ffmpeg loudnorm</li>
+            <li>Hits any target LUFS (default -14 for YouTube)</li>
+            <li>Produces a standalone normalized WAV</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🧠 Cross-session memory <span class="badge done">done</span></h4>
+          <ul>
+            <li>Per-timeline journal auto-saved every run</li>
+            <li><code>remember</code> / <code>forget</code> pin durable facts</li>
+            <li><code>recall</code> searches past sessions</li>
+            <li>Recent history auto-injected into agent prompts</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🛡 Preview-before-commit <span class="badge done">done</span></h4>
+          <ul>
+            <li><code>submit_plan</code> asks for user approval</li>
+            <li>UI modal shows every step + args + reason</li>
+            <li>Reject cleanly without any timeline change</li>
+          </ul>
+        </div>
       </div>
 
       <div class="help-subtitle">🚧 Coming soon <span class="count">(on the roadmap)</span></div>
       <div class="help-grid">
 
         <div class="help-card">
-          <h4>🤖 Iterative prompt mode <span class="badge planned">next</span></h4>
+          <h4>🎨 Color grading <span class="badge planned">next</span></h4>
           <ul>
-            <li>Multi-turn tool-use (not single-shot)</li>
-            <li>LLM can search transcript, preview, refine</li>
-            <li>"Make it punchier" → iterative tightening</li>
+            <li>Vision-model analysis of reference frames</li>
+            <li>Suggest LUTs or node-graph changes</li>
+            <li>Requires Resolve Studio API (paid)</li>
           </ul>
         </div>
 
         <div class="help-card">
-          <h4>🗣 Speaker diarization <span class="badge planned">planned</span></h4>
+          <h4>📝 Auto captions / titles <span class="badge planned">next</span></h4>
           <ul>
-            <li>Who said what (whisperX / pyannote)</li>
-            <li>Per-speaker marker colors</li>
-            <li>Context-aware prompts ("find where Bob says...")</li>
+            <li>Burn-in subtitles from Whisper output</li>
+            <li>Lower-third titles from transcript</li>
+            <li>Social-ready with platform-tuned styling</li>
           </ul>
         </div>
 
         <div class="help-card">
-          <h4>🎞 B-roll suggestions <span class="badge planned">planned</span></h4>
+          <h4>🔬 Acoustic diarization <span class="badge planned">upgrade</span></h4>
           <ul>
-            <li>LLM suggests insert points</li>
-            <li>Semantic search over media pool</li>
-            <li>Auto-place stock footage markers</li>
+            <li>Real voice-print separation (pyannote / whisperX)</li>
+            <li>More accurate than the current LLM heuristic</li>
+            <li>Requires ~1GB model download</li>
           </ul>
         </div>
 
         <div class="help-card">
-          <h4>🖼 Thumbnail picker <span class="badge planned">planned</span></h4>
+          <h4>🎯 Auto-match b-roll <span class="badge planned">upgrade</span></h4>
           <ul>
-            <li>Extract frames at highlight markers</li>
-            <li>Vision model scores each for clickability</li>
-            <li>Export top-3 candidates</li>
+            <li>Caption every media-pool clip with vision model</li>
+            <li>Match suggestions → actual clips semantically</li>
+            <li>Builds on current <code>suggest_broll</code> + <code>list_media_pool</code></li>
           </ul>
         </div>
 
@@ -805,9 +991,14 @@
         <div class="phase-desc">Rough cut + shorts work, but per-clip color/effects/speed aren't preserved yet.</div>
       </div>
       <div class="phase-bar">
-        <div class="phase-title"><span>💬 Prompt editing</span><span class="pct">30%</span></div>
-        <div class="phase-progress"><div class="pfill" style="width:30%"></div></div>
-        <div class="phase-desc">Single-shot works for simple asks. Needs iterative tool-use for complex requests.</div>
+        <div class="phase-title"><span>💬 Prompt editing</span><span class="pct">98%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:98%"></div></div>
+        <div class="phase-desc">27 tools, profile-aware, memory-aware, plan approval. Practically complete.</div>
+      </div>
+      <div class="phase-bar">
+        <div class="phase-title"><span>👁 Media intelligence</span><span class="pct">60%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:60%"></div></div>
+        <div class="phase-desc">Frame analysis, thumbnails, speakers, b-roll, media pool — all shipped. Missing: acoustic diarization, auto b-roll matching.</div>
       </div>
       <div class="phase-bar">
         <div class="phase-title"><span>🎨 Color &amp; effects</span><span class="pct">0%</span></div>
@@ -815,14 +1006,24 @@
         <div class="phase-desc">Not started. Needs Resolve Studio API (paid).</div>
       </div>
       <div class="phase-bar">
-        <div class="phase-title"><span>🔊 Audio processing</span><span class="pct">10%</span></div>
-        <div class="phase-progress"><div class="pfill" style="width:10%"></div></div>
-        <div class="phase-desc">Silence detection only. No leveling, noise reduction, or mixing yet.</div>
+        <div class="phase-title"><span>🔊 Audio processing</span><span class="pct">75%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:75%"></div></div>
+        <div class="phase-desc">Analysis + normalization render shipped. Missing: auto-apply volume keyframes inside the Resolve timeline.</div>
       </div>
       <div class="phase-bar">
-        <div class="phase-title"><span>🎞 Media intelligence</span><span class="pct">5%</span></div>
-        <div class="phase-progress"><div class="pfill" style="width:5%"></div></div>
-        <div class="phase-desc">Audio transcript only. No visual analysis, face detection, or scene recognition.</div>
+        <div class="phase-title"><span>📦 Delivery</span><span class="pct">90%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:90%"></div></div>
+        <div class="phase-desc">5 platform presets + batch render per-clip + render status. Missing: delivery preset management UI.</div>
+      </div>
+      <div class="phase-bar">
+        <div class="phase-title"><span>👤 Personalization</span><span class="pct">95%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:95%"></div></div>
+        <div class="phase-desc">Creator profiles + cross-session memory + pinned facts. Missing only: learned style from actual past edits.</div>
+      </div>
+      <div class="phase-bar">
+        <div class="phase-title"><span>🛡 Safety</span><span class="pct">90%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:90%"></div></div>
+        <div class="phase-desc">Plan approval for multi-step edits, full undo log, marker preview. Missing: auto-backup before destructive ops.</div>
       </div>
       <div class="phase-bar">
         <div class="phase-title"><span>🤝 Collaboration</span><span class="pct">0%</span></div>
@@ -884,6 +1085,20 @@
     </div>
   </div>
 
+  <!-- Plan approval modal -->
+  <div class="modal-overlay" id="plan-modal">
+    <div class="modal">
+      <h2>⚠ Review plan before running</h2>
+      <div id="plan-description" style="color:var(--text);font-size:13px;margin-bottom:14px;padding:10px 12px;background:var(--bg);border-radius:6px;border-left:3px solid var(--accent)"></div>
+      <div style="color:var(--text-dim);font-size:11px;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.04em">Agent wants to run these steps:</div>
+      <div class="marker-list" id="plan-steps"></div>
+      <div class="btn-row">
+        <button class="danger" onclick="rejectPlan()">Reject</button>
+        <button class="primary" onclick="approvePlan()">Approve &amp; Run</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Tab switching
     document.querySelectorAll("nav.tabs button").forEach(btn => {
@@ -924,8 +1139,39 @@
         if (s.text) document.getElementById("status").textContent = s.text;
         if (typeof s.pct === "number") document.getElementById("progress").style.width = s.pct + "%";
         if (s.preview) showPreview(s.preview);
+        if (s.plan) showPlan(s.plan);
       } catch (e) {}
       setTimeout(pollStatus, 400);
+    }
+
+    // Plan approval modal
+    function showPlan(plan) {
+      document.getElementById("plan-description").textContent =
+        plan.description || "(no description)";
+      const steps = document.getElementById("plan-steps");
+      steps.innerHTML = "";
+      (plan.actions || []).forEach((a, i) => {
+        const row = document.createElement("div");
+        row.className = "marker-item";
+        const argPreview = Object.entries(a.args || {})
+          .slice(0, 3)
+          .map(([k, v]) => `${k}=${JSON.stringify(v).slice(0, 40)}`)
+          .join(", ");
+        row.innerHTML = `
+          <span class="ts">${i + 1}.</span>
+          <span class="label"><strong>${a.tool}</strong>(${argPreview})${a.reason ? ` — ${a.reason}` : ""}</span>
+        `;
+        steps.appendChild(row);
+      });
+      document.getElementById("plan-modal").classList.add("active");
+    }
+    async function approvePlan() {
+      document.getElementById("plan-modal").classList.remove("active");
+      await api("approve_plan", { approved: true });
+    }
+    async function rejectPlan() {
+      document.getElementById("plan-modal").classList.remove("active");
+      await api("approve_plan", { approved: false });
     }
 
     // Load timeline info
@@ -1040,9 +1286,91 @@
       await api("apply_preview", { indices: [] });
     }
 
+    // ---- Profiles ----
+    async function loadProfileList() {
+      const data = await api("list_profiles", {});
+      const select = document.getElementById("active-profile");
+      select.innerHTML = "";
+      (data.profiles || []).forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = p.name + (p.builtin ? " (built-in)" : "");
+        if (p.id === data.active_id) opt.selected = true;
+        select.appendChild(opt);
+      });
+      await refreshActiveProfileDesc();
+    }
+
+    async function refreshActiveProfileDesc() {
+      const id = document.getElementById("active-profile").value;
+      if (!id) return;
+      const res = await api("get_profile", { id });
+      const p = res.profile;
+      if (!p) return;
+      document.getElementById("active-profile-desc").textContent =
+        `${p.description || "—"}  •  tone: ${p.tone}  •  pacing: ${p.pacing}` +
+        (p.target_platforms?.length ? `  •  target: ${p.target_platforms.join(", ")}` : "") +
+        `  •  ${p.target_lufs} LUFS`;
+    }
+
+    document.getElementById("active-profile").addEventListener("change", async (e) => {
+      const id = e.target.value;
+      await api("set_active_profile", { id });
+      refreshActiveProfileDesc();
+      setStatus(`👤 Switched to profile: ${id}`, 0);
+    });
+
+    document.getElementById("profile-load-btn").addEventListener("click", async () => {
+      const id = document.getElementById("active-profile").value;
+      if (!id) return;
+      const res = await api("get_profile", { id });
+      const p = res.profile;
+      if (!p) return;
+      document.getElementById("p-id").value = p.id;
+      document.getElementById("p-name").value = p.name;
+      document.getElementById("p-description").value = p.description || "";
+      document.getElementById("p-tone").value = p.tone || "neutral";
+      document.getElementById("p-pacing").value = p.pacing || "balanced";
+      document.getElementById("p-max-shot").value = p.max_shot_seconds ?? "";
+      document.getElementById("p-platform").value = (p.target_platforms && p.target_platforms[0]) || "";
+      document.getElementById("p-lufs").value = p.target_lufs ?? -14;
+      document.getElementById("p-fillers").value = p.filler_sensitivity || "medium";
+      document.getElementById("p-dead-air").value = p.dead_air_threshold ?? 3;
+      document.getElementById("p-notes").value = p.style_notes || "";
+    });
+
+    document.getElementById("profile-save-btn").addEventListener("click", async () => {
+      const payload = {
+        id: document.getElementById("p-id").value.trim(),
+        name: document.getElementById("p-name").value.trim(),
+        description: document.getElementById("p-description").value,
+        tone: document.getElementById("p-tone").value,
+        pacing: document.getElementById("p-pacing").value,
+        max_shot_seconds: parseFloat(document.getElementById("p-max-shot").value) || null,
+        target_platforms: document.getElementById("p-platform").value
+          ? [document.getElementById("p-platform").value] : [],
+        target_lufs: parseFloat(document.getElementById("p-lufs").value) || -14,
+        filler_sensitivity: document.getElementById("p-fillers").value,
+        dead_air_threshold: parseFloat(document.getElementById("p-dead-air").value) || 3,
+        style_notes: document.getElementById("p-notes").value,
+      };
+      if (!payload.id || !payload.name) {
+        alert("ID and name are required");
+        return;
+      }
+      const res = await api("save_profile", payload);
+      if (res.error) {
+        alert("Save failed: " + res.error);
+      } else {
+        setStatus(`✓ Saved profile: ${res.id}`, 0);
+        await loadProfileList();
+      }
+    });
+
     // Init
     loadInfo();
     pollStatus();
+    loadProfileList();
   </script>
 </body>
 </html>
