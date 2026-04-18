@@ -302,6 +302,133 @@
     }
     .examples .chip:hover { background: var(--border); border-color: var(--accent); }
 
+    /* Help tab */
+    .help-hero {
+      background: linear-gradient(135deg, #1e2026 0%, #22252c 100%);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .coverage-ring {
+      width: 90px;
+      height: 90px;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .coverage-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .coverage-ring .track { stroke: var(--surface-2); fill: none; stroke-width: 8; }
+    .coverage-ring .fill-arc { stroke: var(--accent); fill: none; stroke-width: 8; stroke-linecap: round; }
+    .coverage-ring .pct {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    .help-hero .msg h3 { margin: 0 0 4px 0; font-size: 15px; font-weight: 600; }
+    .help-hero .msg p { margin: 0; color: var(--text-dim); font-size: 13px; }
+
+    .help-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .help-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .help-card h4 {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .help-card .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-left: auto;
+    }
+    .badge.done { background: rgba(76,175,122,0.15); color: var(--success); }
+    .badge.partial { background: rgba(214,163,58,0.15); color: var(--warning); }
+    .badge.planned { background: rgba(138,143,153,0.15); color: var(--text-dim); }
+
+    .help-card ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+    .help-card ul li { margin-bottom: 3px; }
+    .help-card ul li code {
+      background: var(--bg);
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 11px;
+      color: var(--text);
+    }
+
+    .help-subtitle {
+      font-size: 14px;
+      font-weight: 600;
+      margin: 24px 0 10px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .help-subtitle .count {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-weight: 400;
+    }
+
+    .phase-bar {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 8px;
+    }
+    .phase-bar .phase-title {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .phase-bar .phase-title .pct { color: var(--accent); }
+    .phase-bar .phase-progress {
+      height: 4px;
+      background: var(--surface-2);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .phase-bar .phase-progress .pfill {
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.3s;
+    }
+    .phase-bar .phase-desc {
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+
     /* Preview modal */
     .modal-overlay {
       position: fixed;
@@ -364,6 +491,7 @@
     <button class="active" data-tab="analyze">🔍 Analyze</button>
     <button data-tab="prompt">💬 Prompt</button>
     <button data-tab="markers">🗑 Markers</button>
+    <button data-tab="help">❓ Help</button>
   </nav>
 
   <main>
@@ -442,6 +570,273 @@
             Describe what you want to do. I'll read the transcript and perform the edits.
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- HELP TAB -->
+    <div class="tab-panel" id="tab-help">
+      <div class="help-hero">
+        <div class="coverage-ring">
+          <svg viewBox="0 0 100 100">
+            <circle class="track" cx="50" cy="50" r="42" />
+            <circle class="fill-arc" cx="50" cy="50" r="42"
+                    stroke-dasharray="264"
+                    stroke-dashoffset="203" />
+          </svg>
+          <div class="pct">23%</div>
+        </div>
+        <div class="msg">
+          <h3>Vision: a 5-year-old can edit in Resolve with words</h3>
+          <p>We've covered the fundamentals — transcription, markers, rough cuts, shorts, subtitles, chapters, and single-shot prompt editing. Big creative tasks (effects, titles, color, audio, multi-cam) still need a human. Roadmap below.</p>
+        </div>
+      </div>
+
+      <div class="help-subtitle">✅ What works today <span class="count">(shipped)</span></div>
+      <div class="help-grid">
+
+        <div class="help-card">
+          <h4>🎤 Transcription <span class="badge done">done</span></h4>
+          <ul>
+            <li>Whisper local transcription of the active timeline</li>
+            <li>Word-level timestamps (enables filler detection)</li>
+            <li>Smart cache — invalidates on clip reorder / trim</li>
+            <li>Live progress bar with heartbeat</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🟢 Smart markers <span class="badge done">done</span></h4>
+          <ul>
+            <li>🟢 Highlights (key moments)</li>
+            <li>🔴 Dead air (long pauses)</li>
+            <li>🔵 Short-clip candidates (60–90s)</li>
+            <li>🟡 Chapters (YouTube-style)</li>
+            <li>Preview &amp; approve each before applying</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🪶 Filler detection <span class="badge done">done</span></h4>
+          <ul>
+            <li>Finds every um / uh / like / you know</li>
+            <li>Word-level precision (±50ms padding)</li>
+            <li>Shows up as red markers or fed into rough cut</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>✂ Rough cut <span class="badge done">done</span></h4>
+          <ul>
+            <li>New timeline with dead-air regions removed</li>
+            <li>Rebuilds from original source media</li>
+            <li>Keep regions inverted from DEAD_AIR markers</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>✂ Shorts timeline <span class="badge done">done</span></h4>
+          <ul>
+            <li>New timeline containing just SHORT_CLIP regions</li>
+            <li>Multi-clip spans handled correctly</li>
+            <li>Concatenated in timeline order</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>📚 YouTube package <span class="badge done">done</span></h4>
+          <ul>
+            <li>Auto chapter markers on timeline</li>
+            <li>Description file (hook + chapters + hashtags)</li>
+            <li>.srt &amp; .vtt subtitle export</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>💬 Prompt editing <span class="badge partial">mvp</span></h4>
+          <ul>
+            <li>"Mark every time I mention AI"</li>
+            <li>"Find the 3 funniest moments"</li>
+            <li>"Clear all red markers"</li>
+            <li>Single-shot planner → executes actions</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🗑 Marker management <span class="badge done">done</span></h4>
+          <ul>
+            <li>Clear ALL markers</li>
+            <li>Clear by specific color</li>
+            <li>15 Resolve colors supported</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🔄 Provider choice <span class="badge done">done</span></h4>
+          <ul>
+            <li>Anthropic Claude or OpenAI</li>
+            <li>Auto-detect by which key is set</li>
+            <li><code>AI_PROVIDER</code> to force one</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="help-subtitle">🚧 Coming soon <span class="count">(on the roadmap)</span></div>
+      <div class="help-grid">
+
+        <div class="help-card">
+          <h4>🤖 Iterative prompt mode <span class="badge planned">next</span></h4>
+          <ul>
+            <li>Multi-turn tool-use (not single-shot)</li>
+            <li>LLM can search transcript, preview, refine</li>
+            <li>"Make it punchier" → iterative tightening</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🗣 Speaker diarization <span class="badge planned">planned</span></h4>
+          <ul>
+            <li>Who said what (whisperX / pyannote)</li>
+            <li>Per-speaker marker colors</li>
+            <li>Context-aware prompts ("find where Bob says...")</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🎞 B-roll suggestions <span class="badge planned">planned</span></h4>
+          <ul>
+            <li>LLM suggests insert points</li>
+            <li>Semantic search over media pool</li>
+            <li>Auto-place stock footage markers</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🖼 Thumbnail picker <span class="badge planned">planned</span></h4>
+          <ul>
+            <li>Extract frames at highlight markers</li>
+            <li>Vision model scores each for clickability</li>
+            <li>Export top-3 candidates</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🎵 Beat-sync cutting <span class="badge planned">planned</span></h4>
+          <ul>
+            <li>Detect music beats with librosa</li>
+            <li>Snap cuts to beat grid</li>
+            <li>Great for music video / montage edits</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🎨 Color grading <span class="badge planned">stretch</span></h4>
+          <ul>
+            <li>Suggest LUTs / node graphs</li>
+            <li>Analyze reference frames</li>
+            <li>Requires Resolve Studio API</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🔊 Audio leveling <span class="badge planned">stretch</span></h4>
+          <ul>
+            <li>Detect clipping / quiet patches</li>
+            <li>Suggest volume keyframes</li>
+            <li>EQ / noise reduction hints</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🔒 Local-only mode <span class="badge planned">planned</span></h4>
+          <ul>
+            <li>Ollama instead of cloud LLM</li>
+            <li>whisper.cpp instead of Python whisper</li>
+            <li>Fully offline editing for sensitive content</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>👤 Creator profiles <span class="badge planned">planned</span></h4>
+          <ul>
+            <li>Per-creator style config</li>
+            <li>"Punchy cuts, max 8s shots, formal tone"</li>
+            <li>Fed into every prompt automatically</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🎬 Title & caption generation <span class="badge planned">planned</span></h4>
+          <ul>
+            <li>Auto-generate on-screen captions</li>
+            <li>Lower-thirds from transcript</li>
+            <li>Social-ready burned-in subtitles</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>📸 Multi-cam auto-switch <span class="badge planned">stretch</span></h4>
+          <ul>
+            <li>Pick best angle per moment</li>
+            <li>Audio-level + face-detection heuristics</li>
+            <li>Auto build a synced multi-cam edit</li>
+          </ul>
+        </div>
+
+        <div class="help-card">
+          <h4>🔁 Undo history <span class="badge planned">planned</span></h4>
+          <ul>
+            <li>Log of all applied edits</li>
+            <li>Revert any past operation</li>
+            <li>Cross-session persistence</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="help-subtitle">📊 Coverage by area</div>
+
+      <div class="phase-bar">
+        <div class="phase-title"><span>📝 Transcription &amp; markers</span><span class="pct">95%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:95%"></div></div>
+        <div class="phase-desc">Core feature — solid. Missing: multi-language UI hints.</div>
+      </div>
+      <div class="phase-bar">
+        <div class="phase-title"><span>✂ Timeline rebuilding</span><span class="pct">60%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:60%"></div></div>
+        <div class="phase-desc">Rough cut + shorts work, but per-clip color/effects/speed aren't preserved yet.</div>
+      </div>
+      <div class="phase-bar">
+        <div class="phase-title"><span>💬 Prompt editing</span><span class="pct">30%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:30%"></div></div>
+        <div class="phase-desc">Single-shot works for simple asks. Needs iterative tool-use for complex requests.</div>
+      </div>
+      <div class="phase-bar">
+        <div class="phase-title"><span>🎨 Color &amp; effects</span><span class="pct">0%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:0%"></div></div>
+        <div class="phase-desc">Not started. Needs Resolve Studio API (paid).</div>
+      </div>
+      <div class="phase-bar">
+        <div class="phase-title"><span>🔊 Audio processing</span><span class="pct">10%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:10%"></div></div>
+        <div class="phase-desc">Silence detection only. No leveling, noise reduction, or mixing yet.</div>
+      </div>
+      <div class="phase-bar">
+        <div class="phase-title"><span>🎞 Media intelligence</span><span class="pct">5%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:5%"></div></div>
+        <div class="phase-desc">Audio transcript only. No visual analysis, face detection, or scene recognition.</div>
+      </div>
+      <div class="phase-bar">
+        <div class="phase-title"><span>🤝 Collaboration</span><span class="pct">0%</span></div>
+        <div class="phase-progress"><div class="pfill" style="width:0%"></div></div>
+        <div class="phase-desc">No project sharing, comments, or team features.</div>
+      </div>
+
+      <div class="help-subtitle">⌨ Keyboard tips</div>
+      <div class="help-card" style="max-width:540px">
+        <ul>
+          <li><code>⌘↵</code> in Prompt input to send quickly</li>
+          <li><code>Close browser tab</code> to stop the server (or quit Resolve)</li>
+          <li>Re-run the script any time to reload — source updates live</li>
+        </ul>
       </div>
     </div>
 
