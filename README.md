@@ -1,20 +1,35 @@
 # Resolve AI Assistant
 
-AI-powered editing assistant for DaVinci Resolve. Analyzes your timeline, adds markers for highlights and cuts, extracts shorts, and generates rough cuts.
+AI-powered editing assistant for DaVinci Resolve. Browser-based UI that transcribes your timeline, analyzes it with Claude or OpenAI, and edits the timeline for you — markers, rough cuts, shorts timelines, chapter generation, subtitle export, and natural-language prompt editing.
 
 ## Features
 
-- **Auto-markers**: Transcribes video, identifies highlights and dead air, adds color-coded markers to timeline
-- **Shorts extraction**: Finds the best 60-90 second clips for vertical video and **builds a separate Shorts timeline automatically**
-- **Rough-cut generation**: Builds a new timeline with all detected dead-air regions removed
-- **Filler-word detection**: Word-level timing finds every "um / uh / like / you know" so they show up as red markers (or get removed by the rough cut)
-- **Chapter markers + YouTube description**: One click produces chapter markers and writes a ready-to-paste description file
-- **Subtitle export**: One click writes `.srt` and `.vtt` files for the timeline
-- **Preview before apply**: Review and approve/reject markers before they're added
-- **Smart transcript caching**: Cache key includes per-clip identity + in/out points, so reordering or trimming clips invalidates the cache automatically
-- **Live progress**: Whisper progress is reported in real-time inside Resolve
-- **Clear by color**: Pick any marker color and remove just those markers
-- **In-app UI**: Runs directly from Resolve's Scripts menu
+### In-Resolve UI (modern, browser-based)
+- **Unified dashboard** with tabs — runs in your default browser, served by a tiny local server
+- **Live progress** with real-time status + progress bar
+- **Marker preview** in a modal — select which markers to apply before they're added
+
+### Analysis
+- **Auto-markers** — highlights (green), dead air (red), short clips (blue), chapter markers (yellow)
+- **Filler-word detection** at the word level — finds every "um / uh / like / you know"
+- **Chapter markers + YouTube description** — one click produces chapters and a ready-to-paste description
+- **Subtitle export** — writes `.srt` and `.vtt` files for the timeline
+
+### Timeline rebuilding
+- **Rough-cut generation** — new timeline with all detected dead-air regions removed
+- **Shorts timeline** — new timeline containing the short-worthy segments, concatenated
+
+### Prompt-based editing 💬
+- **Chat with your timeline** — type "Mark every time I mention AI" or "Make a shorts timeline of the best 60 seconds" and the LLM plans + executes the edit via your transcript
+
+### Marker management
+- **Clear all** or **clear by color** — pick any of 15 Resolve marker colors
+
+### Smart caching
+- Transcript cache keyed on per-clip identity + in/out points, so reordering/trimming invalidates the cache automatically
+
+### Provider-agnostic
+- Uses **Claude** (`claude-sonnet-4-6` default) or **OpenAI** (`gpt-4o` default) — auto-detects based on which API key is set, or force one with `AI_PROVIDER`
 
 ## Marker Colors
 
@@ -28,210 +43,169 @@ AI-powered editing assistant for DaVinci Resolve. Analyzes your timeline, adds m
 ## Requirements
 
 ### Software
-- **DaVinci Resolve 18+** (Free or Studio)
-- **Python 3.10+**
+- **DaVinci Resolve 20** (Free or Studio) — note: the Mac **App Store version is NOT supported** (sandboxing blocks script-level file/process access). Download from [blackmagicdesign.com](https://www.blackmagicdesign.com/products/davinciresolve) directly.
+- **Python 3.11** from [python.org](https://www.python.org/downloads/macos/) — Resolve 20 only accepts Python from the official python.org framework installer (not conda, Homebrew, or system Python).
 - **ffmpeg** (for audio extraction)
 
 ### API Key (pick one)
 - **Anthropic API key** (default), OR
-- **OpenAI API key** — set `OPENAI_API_KEY` and the app auto-switches
+- **OpenAI API key** — the app auto-switches based on which key you set
 
-## Installation
+## Installation (macOS)
 
-### 1. Install ffmpeg
+### 1. Install Python 3.11 (python.org)
 
-**macOS:**
+Download the macOS 64-bit universal2 installer from https://www.python.org/downloads/macos/ and run the .pkg. Installs to `/Library/Frameworks/Python.framework/Versions/3.11/`.
+
+### 2. Install ffmpeg
+
 ```bash
 brew install ffmpeg
 ```
 
-**Ubuntu/Debian:**
-```bash
-sudo apt update && sudo apt install ffmpeg
-```
+### 3. Clone & install Python dependencies
 
-**Windows:**
-```bash
-# Using Chocolatey
-choco install ffmpeg
-
-# Or download from https://ffmpeg.org/download.html
-# Add to PATH
-```
-
-### 2. Clone and install dependencies
+Install into the **python.org Python 3.11** (this is what Resolve uses):
 
 ```bash
-git clone https://github.com/Kilo-Loco/resolve-ai-assistant.git
+git clone https://github.com/<your-fork>/resolve-ai-assistant.git
 cd resolve-ai-assistant
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
+/Library/Frameworks/Python.framework/Versions/3.11/bin/python3 \
+  -m pip install -r requirements.txt
 ```
 
-### 3. Set up an API key
+(If you also want CLI usage from a conda env, install into that too — see "CLI usage" below.)
 
-Pick whichever provider you already have credit with.
+### 4. Set up an API key
 
-**Anthropic Claude (default):**
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-```
-Get a key at [console.anthropic.com](https://console.anthropic.com).
-
-**OpenAI:**
-```bash
-export OPENAI_API_KEY="sk-..."
-```
-Get a key at [platform.openai.com/api-keys](https://platform.openai.com/api-keys).
-
-The app auto-detects which key you've set. If you have both, force one with:
-```bash
-export AI_PROVIDER=openai     # or "anthropic"
-```
-
-**Or use a .env file:**
-
-The app auto-loads `.env` from these locations (first match wins, real env vars always win):
-
-1. `~/.resolve-ai-assistant/.env`  ← **recommended for the in-Resolve script**
-2. `<repo>/.env`
-3. `./.env`
+Create an env file — the app will auto-load it on launch regardless of how Resolve is started:
 
 ```bash
-# Recommended for in-Resolve usage (Resolve doesn't see your shell env)
 mkdir -p ~/.resolve-ai-assistant
 cat > ~/.resolve-ai-assistant/.env <<'EOF'
 OPENAI_API_KEY=sk-...
-# AI_PROVIDER=openai
+# or: ANTHROPIC_API_KEY=sk-ant-...
+# AI_PROVIDER=openai           # force if both keys are set
 EOF
+chmod 600 ~/.resolve-ai-assistant/.env
 ```
 
-### 4. Install to DaVinci Resolve
+Alternative: set as a shell env var (`export OPENAI_API_KEY=...`), but this only works if you launch Resolve from that same shell via `open -a "DaVinci Resolve"`.
 
-**macOS:**
+### 5. Install to DaVinci Resolve
+
 ```bash
 ./install.sh
 ```
 
-**Windows (manual):**
-```
-Copy src/ai_edit_assistant.py to:
-%APPDATA%\Blackmagic Design\DaVinci Resolve\Support\Fusion\Scripts\Edit\AI Edit Assistant.py
-```
+This drops a tiny launcher at `~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Fusion/Scripts/Edit/AI Edit Assistant.py` that runs the real module from your repo (edits to source files take effect on the next run — no reinstall needed).
 
-**Linux (manual):**
-```
-Copy src/ai_edit_assistant.py to:
-~/.local/share/DaVinciResolve/Fusion/Scripts/Edit/AI Edit Assistant.py
-```
+### 6. Restart Resolve
 
-### 5. Enable external scripting in Resolve
-
-1. Open DaVinci Resolve
-2. Go to **Preferences** → **System** → **General**
-3. Set **External scripting using** to **Local** (or Network if needed)
-4. Restart DaVinci Resolve
+Cmd+Q, relaunch.
 
 ## Usage
 
-1. Open DaVinci Resolve
-2. Import your video and create a timeline
-3. Go to **Workspace → Scripts → Edit → AI Edit Assistant**
-4. Select your options:
-   - Whisper model (tiny=fast, large=accurate)
-   - What to find (highlights, dead air, shorts)
-5. Click **Analyze**
-6. Review markers in the preview window
-7. Click **Apply Selected**
+1. Open DaVinci Resolve, load a project with a timeline
+2. **Workspace → Scripts → Edit → AI Edit Assistant**
+3. Your default browser opens to `http://127.0.0.1:<port>` with the UI
+4. Three tabs:
+   - **🔍 Analyze** — checkboxes for markers + timeline operations, click Analyze, review, apply
+   - **💬 Prompt** — chat-style: describe what you want, LLM plans + executes
+   - **🗑 Markers** — clear all / clear by color
+5. Close the browser tab when done; the server stops when you quit Resolve
+
+The HTML page can also be opened on another device on your LAN (server binds to 127.0.0.1 by default for safety).
 
 ## CLI Usage
 
-You can also use the command-line interface:
+Great for batch jobs — runs outside Resolve, uses any Python env.
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
+# Set up a conda env (any env with the deps works)
+conda create -n resolve-ai python=3.11 -y
+conda activate resolve-ai
+conda install -c conda-forge ffmpeg -y
+pip install -r requirements.txt
+
+export OPENAI_API_KEY="sk-..."   # or ANTHROPIC_API_KEY
 
 # Transcribe a video
 python src/cli.py transcribe video.mp4 --model base
 
-# Analyze and generate markers (now supports fillers + chapters)
+# Analyze (fillers + chapters optional)
 python src/cli.py analyze -v video.mp4 -o markers.json --fillers --chapters
 
-# Apply markers to Resolve (Resolve must be open)
-python src/cli.py apply markers.json
-
-# Export subtitles from a video or saved transcript
+# Export subtitles
 python src/cli.py subtitles video.mp4 -o my_subs
 
-# Build a "dead air removed" rough cut into Resolve
+# Apply existing markers.json to the open Resolve timeline
+python src/cli.py apply markers.json
+
+# Build a rough cut in Resolve
 python src/cli.py rough-cut markers.json --name "My Rough Cut"
 
-# Build a shorts timeline from SHORT_CLIP markers
+# Build a shorts timeline
 python src/cli.py shorts-timeline markers.json --name "Shorts"
 ```
 
 ### Choosing the model
 
-Default models:
-- Anthropic → `claude-sonnet-4-6`
-- OpenAI → `gpt-4o`
+Defaults: Anthropic → `claude-sonnet-4-6`, OpenAI → `gpt-4o`. Override:
 
-Override with:
 ```bash
-export CLAUDE_MODEL="claude-opus-4-6"     # higher quality, higher cost
-export OPENAI_MODEL="gpt-4o-mini"         # cheaper / faster
+export CLAUDE_MODEL="claude-opus-4-6"    # higher quality, higher cost
+export OPENAI_MODEL="gpt-4o-mini"        # cheaper / faster
 ```
 
-### Output files
+## Output files
 
-Subtitles, descriptions, and other artifacts written from the in-app UI land in:
+Subtitles, descriptions, and other artifacts written from the UI land in:
 
 ```
 ~/.resolve-ai-assistant/exports/
 ```
 
+Transcript cache:
+
+```
+~/.resolve-ai-assistant/cache/
+```
+
+Diagnostic logs (in case something misbehaves):
+
+```
+~/.resolve-ai-assistant/whisper.log
+~/.resolve-ai-assistant/prompt.log
+```
+
 ## Troubleshooting
 
-### "No module named 'anthropic'"
+### "Python 3 was not found" in Resolve
+You're missing the python.org installer. See step 1 above. Conda / Homebrew / system Python do not satisfy Resolve 20's detection.
+
+### The in-Resolve menu shows "No Scripts" / doesn't show the script
+You may be running the Mac App Store version (bundle id `com.blackmagic-design.DaVinciResolveLite`) which is sandboxed. Install the regular free Resolve from blackmagicdesign.com directly.
+
+### "ffmpeg not found" / transcription hangs
+Resolve's Python doesn't inherit your shell PATH. Install ffmpeg somewhere the code can find it (`/opt/homebrew/bin/ffmpeg`, `/usr/local/bin/ffmpeg`) or set:
 ```bash
-source venv/bin/activate
-pip install -r requirements.txt
+export FFMPEG_BIN=/full/path/to/ffmpeg
 ```
 
-### "ANTHROPIC_API_KEY not set"
-```bash
-export ANTHROPIC_API_KEY="your-key-here"
-```
+### Markers land at wrong timecodes
+Fixed in current version — `AddMarker` takes the offset from timeline start, not the absolute frame.
 
-### Script not appearing in Resolve
-- Make sure you ran `./install.sh` (macOS) or copied the file manually
-- Restart DaVinci Resolve completely
-- Check that external scripting is enabled in Preferences
-
-### First run is slow
-- Whisper downloads the model on first use (~150MB for "base")
-- Subsequent runs use the cached model
-- Use "tiny" model for faster (less accurate) transcription
-
-### ffmpeg errors
-```bash
-# Verify ffmpeg is installed
-ffmpeg -version
-
-# If not found, install it (see Installation section)
-```
+### "Address already in use"
+A previous run of the server is still up. Quit Resolve fully (Cmd+Q) and relaunch.
 
 ## Known Limitations
 
-- Rough-cut generation rebuilds the timeline from the source media; per-clip color/effects/speed are not yet preserved
-- Filler-word detection requires the `tiny` model or larger (uses Whisper word-level timestamps)
-- Chapter generation does an extra Claude call (~$0.01 per 10-minute video)
+- **Rough cut** rebuilds the timeline from source media; per-clip color/effects/speed are not preserved
+- **Filler-word detection** requires Whisper word-level timestamps (any model works; tiny is fastest)
+- **Chapter generation** does an extra LLM call (~$0.01 per 10-minute video)
+- Prompt mode currently uses single-shot generation — a future version will support iterative tool-use for multi-step plans
 
 ## License
 
